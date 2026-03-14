@@ -1,0 +1,15 @@
+[Unit]
+Description=Captive portal / WiFi config for Raspberry Pi
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/captive-portal
+Restart=always
+RestartSec=10
+# Run as root so we can bind to port 80, run nmcli, iptables, and systemctl reboot
+User=root
+
+[Install]
+WantedBy=multi-user.target

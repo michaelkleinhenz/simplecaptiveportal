@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if .Hostname}}{{.Hostname}} – {{end}}Device configuration</title>
+  <style>
+    :root { --bg: #1a1b26; --surface: #24283b; --text: #c0caf5; --accent: #7aa2f7; --muted: #565f89; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; padding: 1.5rem; }
+    .container { max-width: 420px; margin: 0 auto; }
+    h1 { font-size: 1.35rem; margin-bottom: 0.5rem; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { background: var(--surface); border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+    section h2 { font-size: 0.95rem; margin: 0 0 1rem 0; color: var(--accent); }
+    label { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--muted); }
+    input[type="text"], input[type="password"] { width: 100%; padding: 0.6rem; border: 1px solid var(--muted); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 1rem; margin-bottom: 1rem; }
+    input:focus { outline: none; border-color: var(--accent); }
+    button { width: 100%; padding: 0.75rem; background: var(--accent); color: var(--bg); border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button:hover { opacity: 0.9; }
+    .msg { padding: 0.6rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
+    .msg.success { background: rgba(0, 200, 100, 0.2); color: #9ece6a; }
+    .msg.captive { background: rgba(247, 118, 78, 0.2); color: #ff9e64; }
+    .scan-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; align-items: center; }
+    .scan-row button { width: auto; padding: 0.5rem 1rem; }
+    .scan-status { font-size: 0.85rem; color: var(--muted); }
+    .network-list { list-style: none; padding: 0; margin: 0 0 1rem 0; max-height: 200px; overflow-y: auto; border: 1px solid var(--muted); border-radius: 6px; background: var(--bg); }
+    .network-list li { padding: 0.6rem 1rem; border-bottom: 1px solid var(--surface); cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .network-list li:last-child { border-bottom: none; }
+    .network-list li:hover { background: var(--surface); }
+    .network-list li.selected { background: rgba(122, 162, 247, 0.2); }
+    .network-ssid { font-weight: 500; }
+    .network-meta { font-size: 0.8rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>{{if .Hostname}}{{.Hostname}} – {{end}}Device configuration</h1>
+    <p class="sub">{{if .CaptiveMode}}Connect to WiFi: enter your network below. The device will reboot and join it.{{else}}Change WiFi or other settings below.{{end}}</p>
+
+    {{if .Saved}}
+    <div class="msg success">Settings saved.</div>
+    {{end}}
+    {{if .CaptiveMode}}
+    <div class="msg captive">No WiFi connected. Configure your network to continue.</div>
+    {{end}}
+
+    <form action="/configure" method="post">
+      <section>
+        <h2>WiFi</h2>
+        <div class="scan-row">
+          <button type="button" id="scan-btn">Scan networks</button>
+          <span class="scan-status" id="scan-status" aria-live="polite"></span>
+        </div>
+        <ul class="network-list" id="network-list" aria-label="Scanned networks"></ul>
+        <label for="ssid">Network name (SSID)</label>
+        <input type="text" id="ssid" name="ssid" value="{{.SSID}}" placeholder="Your WiFi name or select above" autocomplete="off">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Leave empty for open networks" autocomplete="off">
+      </section>
+
+      <section>
+        <h2>Snapcast Server</h2>
+        <label for="snapcast_server">Server IP or hostname</label>
+        <input type="text" id="snapcast_server" name="snapcast_server" value="{{.SnapcastServer}}" placeholder="e.g. 192.168.1.100" autocomplete="off">
+      </section>
+
+      <section>
+        <h2>Snapcast Client Name</h2>
+        <label for="hostname">Device hostname (shown in Snapcast)</label>
+        <input type="text" id="hostname" name="hostname" value="{{.Hostname}}" placeholder="e.g. living-room" maxlength="63" autocomplete="off">
+      </section>
+
+      <button type="submit">Save and apply</button>
+    </form>
+  </div>
+  <script>
+    (function() {
+      var scanBtn = document.getElementById('scan-btn');
+      var scanStatus = document.getElementById('scan-status');
+      var networkList = document.getElementById('network-list');
+      var ssidInput = document.getElementById('ssid');
+      var passwordInput = document.getElementById('password');
+
+      function setStatus(msg) {
+        scanStatus.textContent = msg;
+      }
+
+      scanBtn.addEventListener('click', function() {
+        scanBtn.disabled = true;
+        setStatus('Scanning…');
+        networkList.innerHTML = '';
+        fetch('/api/networks')
+          .then(function(r) {
+            if (!r.ok) throw new Error(r.statusText || 'Scan failed');
+            return r.json();
+          })
+          .then(function(networks) {
+            if (networks.length === 0) {
+              setStatus('No networks found. Enter SSID manually.');
+              return;
+            }
+            setStatus('');
+            networks.forEach(function(n) {
+              var li = document.createElement('li');
+              li.setAttribute('role', 'button');
+              li.setAttribute('tabindex', '0');
+              var secured = n.security && n.security !== '--';
+              li.innerHTML = '<span class="network-ssid">' + escapeHtml(n.ssid) + '</span><span class="network-meta">' + n.signal + '%' + (secured ? ' · Secured' : ' · Open') + '</span>';
+              li.addEventListener('click', function() {
+                document.querySelectorAll('#network-list li.selected').forEach(function(el) { el.classList.remove('selected'); });
+                li.classList.add('selected');
+                ssidInput.value = n.ssid;
+                if (secured) {
+                  passwordInput.focus();
+                } else {
+                  passwordInput.value = '';
+                }
+              });
+              li.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  li.click();
+                }
+              });
+              networkList.appendChild(li);
+            });
+          })
+          .catch(function(err) {
+            setStatus('Scan failed. Enter SSID manually.');
+          })
+          .finally(function() {
+            scanBtn.disabled = false;
+          });
+      });
+
+      function escapeHtml(s) {
+        var div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+    })();
+  </script>
+</body>
+</html>
