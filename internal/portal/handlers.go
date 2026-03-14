@@ -134,6 +134,22 @@ func (s *Server) handleReboot(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Shutting down</title></head><body><p>Shutting down…</p></body></html>`))
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	go func() {
+		_ = networkmanager.Shutdown(s.log)
+	}()
+}
+
 func (s *Server) handleNetworks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -244,3 +244,15 @@ func Reboot(log *slog.Logger) error {
 	}
 	return nil
 }
+
+// Shutdown triggers a system power-off (requires root).
+func Shutdown(log *slog.Logger) error {
+	cmd := exec.Command("systemctl", "poweroff")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("systemctl poweroff: %w", err)
+	}
+	if log != nil {
+		log.Info("shutdown triggered")
+	}
+	return nil
+}

@@ -61,6 +61,7 @@ func NewServer(port string) (*Server, error) {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/configure", s.handleConfigure)
 	mux.HandleFunc("/reboot", s.handleReboot)
+	mux.HandleFunc("/shutdown", s.handleShutdown)
 	mux.HandleFunc("/api/networks", s.handleNetworks)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	s.srv = &http.Server{Addr: ":" + port, Handler: s.captiveWrap(mux)}
@@ -69,7 +70,7 @@ func NewServer(port string) (*Server, error) {
 
 func (s *Server) captiveWrap(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.captiveMode.Load() && r.URL.Path != "/" && r.URL.Path != "/configure" && r.URL.Path != "/reboot" && r.URL.Path != "/api/networks" && !strings.HasPrefix(r.URL.Path, "/static/") {
+		if s.captiveMode.Load() && r.URL.Path != "/" && r.URL.Path != "/configure" && r.URL.Path != "/reboot" && r.URL.Path != "/shutdown" && r.URL.Path != "/api/networks" && !strings.HasPrefix(r.URL.Path, "/static/") {
 			// Captive portal: redirect any other path to config page
 			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 			return
