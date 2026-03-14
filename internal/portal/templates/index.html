@@ -16,11 +16,14 @@
     label { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--muted); }
     input[type="text"], input[type="password"] { width: 100%; padding: 0.6rem; border: 1px solid var(--muted); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 1rem; margin-bottom: 1rem; }
     input:focus { outline: none; border-color: var(--accent); }
-    button { width: 100%; padding: 0.75rem; background: var(--accent); color: var(--bg); border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button { padding: 0.75rem; background: var(--accent); color: var(--bg); border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; }
     button:hover { opacity: 0.9; }
+    button[type="submit"] { width: 100%; }
     .msg { padding: 0.6rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
     .msg.success { background: rgba(0, 200, 100, 0.2); color: #9ece6a; }
     .msg.captive { background: rgba(247, 118, 78, 0.2); color: #ff9e64; }
+    .btn-reboot { background: var(--surface); color: var(--muted); border: 1px solid var(--muted); margin-top: 0.5rem; }
+    .btn-reboot:hover { color: var(--text); border-color: var(--text); }
     .scan-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; align-items: center; }
     .scan-row button { width: auto; padding: 0.5rem 1rem; }
     .scan-status { font-size: 0.85rem; color: var(--muted); }
@@ -36,7 +39,7 @@
 <body>
   <div class="container">
     <h1>{{if .Hostname}}{{.Hostname}} – {{end}}Device configuration</h1>
-    <p class="sub">{{if .CaptiveMode}}Connect to WiFi: enter your network below. The device will reboot and join it.{{else}}Change WiFi or other settings below.{{end}}</p>
+    <p class="sub">{{if .CaptiveMode}}Connect to WiFi: enter your network below and save. Reboot when ready to switch network.{{else}}Change WiFi or other settings below. Reboot to apply WiFi changes.{{end}}</p>
 
     {{if .Saved}}
     <div class="msg success">Settings saved.</div>
@@ -46,6 +49,7 @@
     {{end}}
 
     <form action="/configure" method="post">
+      <input type="hidden" name="action" value="wifi">
       <section>
         <h2>WiFi</h2>
         <div class="scan-row">
@@ -57,21 +61,29 @@
         <input type="text" id="ssid" name="ssid" value="{{.SSID}}" placeholder="Your WiFi name or select above" autocomplete="off">
         <label for="password">Password</label>
         <input type="password" id="password" name="password" placeholder="Leave empty for open networks" autocomplete="off">
+        <button type="submit">Save WiFi</button>
       </section>
+    </form>
 
+    <form action="/configure" method="post">
+      <input type="hidden" name="action" value="settings">
       <section>
         <h2>Snapcast Server</h2>
         <label for="snapcast_server">Server IP or hostname</label>
         <input type="text" id="snapcast_server" name="snapcast_server" value="{{.SnapcastServer}}" placeholder="e.g. 192.168.1.100" autocomplete="off">
       </section>
-
       <section>
         <h2>Snapcast Client Name</h2>
-        <label for="hostname">Device hostname (shown in Snapcast)</label>
+        <label for="hostname">Device hostname (shown in Snapcast, reboot required to apply)</label>
         <input type="text" id="hostname" name="hostname" value="{{.Hostname}}" placeholder="e.g. living-room" maxlength="63" autocomplete="off">
+        <button type="submit">Save settings</button>
       </section>
+    </form>
 
-      <button type="submit">Save and apply</button>
+    <form action="/reboot" method="post" id="reboot-form" onsubmit="return confirm('Reboot the device now?');">
+      <section>
+        <button type="submit" class="btn-reboot">Reboot</button>
+      </section>
     </form>
   </div>
   <script>

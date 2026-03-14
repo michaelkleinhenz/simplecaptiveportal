@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/snapcast-client/captive-portal/internal/hostname"
 	"github.com/snapcast-client/captive-portal/internal/networkmanager"
@@ -50,16 +49,49 @@ func (s *Server) handleConfigure(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	action := r.FormValue("action")
 
+	switch action {
+	case "wifi":
+		s.handleConfigureWifi(w, r)
+		return
+	case "settings":
+		s.handleConfigureSettings(w, r)
+		return
+	default:
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+}
+
+func (s *Server) handleConfigureWifi(w http.ResponseWriter, r *http.Request) {
 	ssid := strings.TrimSpace(r.FormValue("ssid"))
 	password := r.FormValue("password")
-
-	// Save to config for display / backup
 	s.cfg.SetWiFi(ssid, password)
+	if err := s.cfg.Save(s.cfgPath); err != nil {
+		s.log.Warn("save config", "err", err)
+	}
+	if ssid == "" {
+		http.Redirect(w, r, "/?saved=1", http.StatusSeeOther)
+		return
+	}
+	ifname := s.wifiIface
+	if ifname == "" {
+		ifname = discoverWifiInterface()
+	}
+	if err := networkmanager.AddWifiConnection(ifname, ssid, password, s.log); err != nil {
+		s.log.Error("add wifi connection", "err", err)
+		http.Error(w, "Failed to configure WiFi. Check logs.", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/?saved=1", http.StatusSeeOther)
+}
+
+func (s *Server) handleConfigureSettings(w http.ResponseWriter, r *http.Request) {
 	snapcastServer := strings.TrimSpace(r.FormValue("snapcast_server"))
 	clientName := strings.TrimSpace(r.FormValue("hostname"))
 	for key, values := range r.Form {
-		if key == "ssid" || key == "password" || key == "snapcast_server" || key == "hostname" {
+		if key == "action" || key == "snapcast_server" || key == "hostname" {
 			continue
 		}
 		if len(values) > 0 {
@@ -69,7 +101,6 @@ func (s *Server) handleConfigure(w http.ResponseWriter, r *http.Request) {
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.log.Warn("save config", "err", err)
 	}
-	// Write Snapcast server to /etc/default/snapclient and restart snapclient so it picks up the new host
 	if snapclient.ValidHost(snapcastServer) {
 		if err := snapclient.WriteHost(snapclient.DefaultPath, snapcastServer); err != nil {
 			s.log.Warn("write snapclient defaults", "err", err)
@@ -80,34 +111,27 @@ func (s *Server) handleConfigure(w http.ResponseWriter, r *http.Request) {
 	if clientName != "" && hostname.Valid(clientName) {
 		if err := hostname.Set(clientName); err != nil {
 			s.log.Warn("set hostname", "err", err)
+		} else if err := snapclient.RestartService(); err != nil {
+			s.log.Warn("restart snapclient after hostname change", "err", err)
 		}
 	}
+	http.Redirect(w, r, "/?saved=1", http.StatusSeeOther)
+}
 
-	if ssid != "" {
-		ifname := s.wifiIface
-		if ifname == "" {
-			ifname = discoverWifiInterface()
-		}
-		if err := networkmanager.AddWifiConnection(ifname, ssid, password, s.log); err != nil {
-			s.log.Error("add wifi connection", "err", err)
-			http.Error(w, "Failed to configure WiFi. Check logs.", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rebooting</title></head><body><p>WiFi configured. Rebooting in a few seconds…</p></body></html>`))
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-		go func() {
-			time.Sleep(2 * time.Second)
-			_ = networkmanager.Reboot(s.log)
-		}()
+func (s *Server) handleReboot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-
-	// If no SSID (e.g. only extra options), just show success and redirect
-	http.Redirect(w, r, "/?saved=1", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rebooting</title></head><body><p>Rebooting…</p></body></html>`))
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	go func() {
+		_ = networkmanager.Reboot(s.log)
+	}()
 }
 
 func (s *Server) handleNetworks(w http.ResponseWriter, r *http.Request) {
