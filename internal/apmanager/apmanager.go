@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/snapcast-client/captive-portal/internal/captivedns"
 	"github.com/snapcast-client/captive-portal/internal/hostname"
@@ -77,6 +78,9 @@ func (a *APManager) StartAP() error {
 	if err := networkmanager.ActivateAP(a.ifname, apSSID, a.log); err != nil {
 		return fmt.Errorf("activate AP: %w", err)
 	}
+	// Give NetworkManager time to start DHCP/DNS for the shared connection before we bind to port 53.
+	// On older Raspi OS, starting our DNS too soon can take port 53 before NM's dnsmasq, causing "IP configuration error".
+	time.Sleep(3 * time.Second)
 	a.dnsServer = captivedns.New(gatewayIP, a.log)
 	a.dnsServer.Start()
 	return nil
